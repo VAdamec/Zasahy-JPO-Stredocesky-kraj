@@ -38,6 +38,16 @@ def lookup_index(data, name: str) -> dict[int, dict]:
     return result
 
 
+async def async_search_units(
+    session: aiohttp.ClientSession, term: str
+) -> dict[int, dict]:
+    """Resolve a name to selectable native IDs; an empty result is valid."""
+    data = await async_json(session, FIREBRNO_API + "jednotky", {"term": term})
+    if data == []:
+        return {}
+    return lookup_index(data, "jednotky")
+
+
 def parse_time(value, name: str, optional=False) -> datetime | None:
     if value is None and optional:
         return None
@@ -139,11 +149,16 @@ class FireBrnoProvider:
     url = FIREBRNO_URL
 
     def __init__(
-        self, session: aiohttp.ClientSession, region: int, district: int | None = None
+        self,
+        session: aiohttp.ClientSession,
+        region: int,
+        district: int | None = None,
+        unit: int | None = None,
     ):
         self.session = session
         self.region = region
         self.district = district
+        self.unit = unit
         self.lookups: dict[str, dict[int, dict]] = {}
         self._loaded: datetime | None = None
         self._unknown_refresh: datetime | None = None
@@ -179,6 +194,8 @@ class FireBrnoProvider:
         ]
         if self.district:
             params.append(("okresId", str(self.district)))
+        if self.unit is not None:
+            params.append(("jednotkaId", str(self.unit)))
         params.extend(("stavIds", str(value)) for value in sorted(statuses))
         return await async_json(self.session, FIREBRNO_API, params)
 

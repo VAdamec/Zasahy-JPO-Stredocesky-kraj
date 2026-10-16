@@ -18,6 +18,9 @@ from .const import (
     CONF_PROVIDER,
     CONF_REGION,
     CONF_SCAN_INTERVAL,
+    CONF_UNIT,
+    CONF_UNIT_NAME,
+    CONF_UNIT_SEARCH,
     CONF_URL,
     DEFAULT_REGION,
     DEFAULT_SCAN_INTERVAL,
@@ -33,7 +36,7 @@ from .const import (
 )
 from .parser import ParseError, parse_okres, parse_zasahy
 from .providers.base import async_fetch, async_json
-from .providers.firebrno import FireBrnoProvider, lookup_index
+from .providers.firebrno import FireBrnoProvider, async_search_units, lookup_index
 
 
 def _normalizuj(url: str) -> str:
@@ -186,39 +189,22 @@ class PkrConfigFlow(ConfigFlow, domain=DOMAIN):
             if district is not None and district not in districts:
                 errors["base"] = "invalid_filter"
             else:
-                await self.async_set_unique_id(
-                    f"firebrno:{self._region}:{district or 'all'}"
-                )
-                self._abort_if_unique_id_configured()
-                provider = FireBrnoProvider(
-                    async_get_clientsession(self.hass), self._region, district
-                )
-                try:
-                    await provider.async_fetch_incidents(dt_util.now())
-                except (aiohttp.ClientError, TimeoutError):
-                    errors["base"] = "cannot_connect"
-                except ParseError:
-                    errors["base"] = "invalid_page"
+                self._district = district
+                term = user_input.get(CONF_UNIT_SEARCH, "").strip()
+                if term:
+                    errors = await self._async_unit_search(term)
+                    if not errors:
+                        return await self.async_step_firebrno_unit()
                 else:
-                    place = (
-                        districts[district]["nazev"]
-                        if district
-                        else self._regions[self._region]["nazev"]
-                    )
-                    return self.async_create_entry(
-                        title=f"Zásahy JPO – {place}",
-                        data={
-                            CONF_PROVIDER: PROVIDER_FIREBRNO,
-                            CONF_REGION: self._region,
-                            CONF_DISTRICT: district,
-                            CONF_URL: FIREBRNO_URL,
-                        },
-                    )
+                    return await self._async_create_firebrno_entry()
         return self.async_show_form(
             step_id="firebrno",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_DISTRICT, default="0"): selector.SelectSelector(
+                    vol.Required(
+                        CONF_DISTRICT,
+                        default=str(getattr(self, "_district", None) or "0"),
+                    ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=[
                                 {
@@ -232,10 +218,114 @@ class PkrConfigFlow(ConfigFlow, domain=DOMAIN):
                             ]
                         )
                     ),
+                    vol.Optional(
+                        CONF_UNIT_SEARCH,
+                        description={
+                            "suggested_value": (user_input or {}).get(
+                                CONF_UNIT_SEARCH, ""
+                            )
+                        },
+                    ): selector.TextSelector(),
                 }
             ),
             errors=errors,
         )
+
+    async def _async_unit_search(self, term):
+        if len(term) < 2:
+            return {CONF_UNIT_SEARCH: "unit_search_short"}
+        try:
+            units = await async_search_units(async_get_clientsession(self.hass), term)
+        except (aiohttp.ClientError, TimeoutError):
+            return {"base": "cannot_connect"}
+        except ParseError:
+            return {"base": "invalid_page"}
+        if not units:
+            return {CONF_UNIT_SEARCH: "unit_not_found"}
+        self._units = units
+        return {}
+
+    async def async_step_firebrno_unit(self, user_input=None) -> ConfigFlowResult:
+        errors = {}
+        if user_input is not None:
+            term = user_input.get(CONF_UNIT_SEARCH, "").strip()
+            if term:
+                errors = await self._async_unit_search(term)
+            else:
+                try:
+                    unit = (
+                        int(user_input[CONF_UNIT])
+                        if user_input.get(CONF_UNIT)
+                        else None
+                    )
+                except (ValueError, TypeError):
+                    unit = -1
+                if unit is not None and unit not in self._units:
+                    errors["base"] = "invalid_filter"
+                else:
+                    return await self._async_create_firebrno_entry(unit)
+        return self.async_show_form(
+            step_id="firebrno_unit",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_UNIT): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                {"value": str(key), "label": row["nazev"]}
+                                for key, row in self._units.items()
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(CONF_UNIT_SEARCH): selector.TextSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def _async_create_firebrno_entry(self, unit=None) -> ConfigFlowResult:
+        unique_id = f"firebrno:{self._region}:{self._district or 'all'}"
+        if unit is not None:
+            unique_id += f":unit:{unit}"
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured()
+        provider = FireBrnoProvider(
+            async_get_clientsession(self.hass), self._region, self._district, unit
+        )
+        try:
+            await provider.async_fetch_incidents(dt_util.now())
+        except (aiohttp.ClientError, TimeoutError):
+            errors = {"base": "cannot_connect"}
+        except ParseError:
+            errors = {"base": "invalid_page"}
+        else:
+            place = (
+                self._districts[self._district]["nazev"]
+                if self._district
+                else self._regions[self._region]["nazev"]
+            )
+            data = {
+                CONF_PROVIDER: PROVIDER_FIREBRNO,
+                CONF_REGION: self._region,
+                CONF_DISTRICT: self._district,
+                CONF_URL: FIREBRNO_URL,
+            }
+            if unit is not None:
+                name = self._units[unit]["nazev"]
+                data.update({CONF_UNIT: unit, CONF_UNIT_NAME: name})
+                place += f" – {name}"
+            return self.async_create_entry(title=f"Zásahy JPO – {place}", data=data)
+        # Keep the selected filter visible on validation failure so a retry
+        # cannot accidentally create an unfiltered entry.
+        if unit is not None:
+            result = await self.async_step_firebrno_unit()
+            result["data_schema"] = self.add_suggested_values_to_schema(
+                result["data_schema"], {CONF_UNIT: str(unit)}
+            )
+        else:
+            result = await self.async_step_firebrno()
+        result["errors"] = errors
+        return result
 
     @staticmethod
     @callback

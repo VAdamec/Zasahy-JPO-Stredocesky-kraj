@@ -24,9 +24,18 @@
       },
       "firebrno": {
         "title": "Fire Brno – district",
-        "description": "Select a district or the whole region. History covers 7 days; active incidents are checked over the past 30 days.",
+        "description": "Select a district or the whole region. History covers 7 days; active incidents are checked over the past 30 days. Optionally enter at least two characters of a unit name; leave empty for all units.",
         "data": {
-          "district": "District / whole region"
+          "district": "District / whole region",
+          "unit_search": "Responding unit – search (optional)"
+        }
+      },
+      "firebrno_unit": {
+        "title": "Fire Brno – responding unit",
+        "description": "Select one matching unit, or leave the selection empty for all units. Enter another search to refresh the results. The unit filter combines with the selected region and district.",
+        "data": {
+          "unit": "Responding unit (optional)",
+          "unit_search": "Search another name (optional)"
         }
       }
     },
@@ -34,7 +43,9 @@
       "invalid_url": "URL must start with https://pkr.kr-stredocesky.cz/pkr/zasahy-jpo/",
       "cannot_connect": "Failed to download the page",
       "invalid_page": "The data source has an unexpected structure",
-      "invalid_filter": "Invalid region or district"
+      "invalid_filter": "Invalid region, district, or unit",
+      "unit_search_short": "Enter at least two characters of the unit name",
+      "unit_not_found": "No matching units; change the name or clear the search for all units"
     },
     "abort": {
       "already_configured": "This filter is already configured"

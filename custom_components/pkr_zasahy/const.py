@@ -25,3 +25,7 @@ PROVIDER_FIREBRNO = "firebrno"
 FIREBRNO_URL = "https://udalosti.firebrno.cz/"
 FIREBRNO_API = f"{FIREBRNO_URL}api/"
 DEFAULT_REGION = 116
+
+CONF_UNIT = "unit"
+CONF_UNIT_NAME = "unit_name"
+CONF_UNIT_SEARCH = "unit_search"

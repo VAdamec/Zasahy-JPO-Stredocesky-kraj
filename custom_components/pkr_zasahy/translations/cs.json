@@ -24,9 +24,18 @@
       },
       "firebrno": {
         "title": "Fire Brno – okres",
-        "description": "Vyber okres nebo celý kraj. Historie zahrnuje 7 dní, probíhající zásahy hledáme za posledních 30 dní.",
+        "description": "Vyber okres nebo celý kraj. Historie zahrnuje 7 dní, probíhající zásahy hledáme za posledních 30 dní. Volitelně zadej alespoň dva znaky názvu jednotky; prázdné pole zahrne všechny jednotky.",
         "data": {
-          "district": "Okres / celý kraj"
+          "district": "Okres / celý kraj",
+          "unit_search": "Zasahující jednotka – vyhledat (volitelné)"
+        }
+      },
+      "firebrno_unit": {
+        "title": "Fire Brno – zasahující jednotka",
+        "description": "Vyber jednu jednotku z výsledků. Prázdný výběr zahrne všechny jednotky. Nové hledání obnoví výsledky. Jednotka se kombinuje s vybraným krajem a okresem.",
+        "data": {
+          "unit": "Zasahující jednotka (volitelné)",
+          "unit_search": "Hledat jiný název (volitelné)"
         }
       }
     },
@@ -34,7 +43,9 @@
       "invalid_url": "Adresa musí začínat https://pkr.kr-stredocesky.cz/pkr/zasahy-jpo/",
       "cannot_connect": "Stránku se nepodařilo stáhnout",
       "invalid_page": "Zdroj dat má neočekávanou strukturu",
-      "invalid_filter": "Neplatný kraj nebo okres"
+      "invalid_filter": "Neplatný kraj, okres nebo jednotka",
+      "unit_search_short": "Zadej alespoň dva znaky názvu jednotky",
+      "unit_not_found": "Žádná jednotka nenalezena; uprav název nebo pole vymaž pro všechny jednotky"
     },
     "abort": {
       "already_configured": "Tento filtr už je nastavený"

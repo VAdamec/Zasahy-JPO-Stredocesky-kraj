@@ -1,17 +1,19 @@
 """Testy parseru (bez Home Assistantu): python -m pytest tests"""
 
+import sys
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
-import sys
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "custom_components" / "pkr_zasahy"))
 
-from parser import TZ, ParseError, parse_datum, parse_okres, parse_zasahy, rozdil  # noqa: E402
+from parser import TZ, ParseError, parse_datum, parse_okres, parse_zasahy, rozdil
 
-HTML = (Path(__file__).parent / "fixtures" / "rakovnik.html").read_text(encoding="utf-8")
+HTML = (Path(__file__).parent / "fixtures" / "rakovnik.html").read_text(
+    encoding="utf-8"
+)
 
 
 def test_pocet_a_razeni():

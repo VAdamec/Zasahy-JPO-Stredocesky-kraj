@@ -2,17 +2,39 @@
   "config": {
     "step": {
       "user": {
+        "title": "Fire brigade incidents",
+        "description": "Select the incident data source.",
+        "data": {
+          "provider": "Data source"
+        }
+      },
+      "pkr": {
         "title": "Fire brigade incidents – Central Bohemia",
         "description": "Paste the incidents page URL with your filter (district, alarm level) applied.",
         "data": {
           "url": "Page URL"
+        }
+      },
+      "firebrno_region": {
+        "title": "Fire Brno – region",
+        "description": "Select a region available from the source.",
+        "data": {
+          "region": "Region"
+        }
+      },
+      "firebrno": {
+        "title": "Fire Brno – district",
+        "description": "Select a district or the whole region. History covers 7 days; active incidents are checked over the past 30 days.",
+        "data": {
+          "district": "District / whole region"
         }
       }
     },
     "error": {
       "invalid_url": "URL must start with https://pkr.kr-stredocesky.cz/pkr/zasahy-jpo/",
       "cannot_connect": "Failed to download the page",
-      "invalid_page": "The page does not contain the incidents table"
+      "invalid_page": "The data source has an unexpected structure",
+      "invalid_filter": "Invalid region or district"
     },
     "abort": {
       "already_configured": "This filter is already configured"

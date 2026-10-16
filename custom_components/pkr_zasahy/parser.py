@@ -5,76 +5,50 @@ Modul nezávisí na Home Assistantu, takže jde testovat samostatně.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from hashlib import sha1
-from html.parser import HTMLParser
 import re
+from datetime import datetime
+from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
+
+# Re-export for existing parser consumers and standalone parser tests.
+try:
+    from .models import ParseError, Zasah, rozdil
+except ImportError:  # Standalone import without Home Assistant.
+    from models import ParseError, Zasah, rozdil  # noqa: F401
 
 TZ = ZoneInfo("Europe/Prague")
 
 # Genitiv (jak ho stránka používá) i nominativ pro jistotu
 MONTHS = {
-    "ledna": 1, "února": 2, "března": 3, "dubna": 4, "května": 5, "června": 6,
-    "července": 7, "srpna": 8, "září": 9, "října": 10, "listopadu": 11, "prosince": 12,
-    "leden": 1, "únor": 2, "březen": 3, "duben": 4, "květen": 5, "červen": 6,
-    "červenec": 7, "srpen": 8, "říjen": 10, "listopad": 11, "prosinec": 12,
+    "ledna": 1,
+    "února": 2,
+    "března": 3,
+    "dubna": 4,
+    "května": 5,
+    "června": 6,
+    "července": 7,
+    "srpna": 8,
+    "září": 9,
+    "října": 10,
+    "listopadu": 11,
+    "prosince": 12,
+    "leden": 1,
+    "únor": 2,
+    "březen": 3,
+    "duben": 4,
+    "květen": 5,
+    "červen": 6,
+    "červenec": 7,
+    "srpen": 8,
+    "říjen": 10,
+    "listopad": 11,
+    "prosinec": 12,
 }
 
 DATE_RE = re.compile(r"(\d{1,2})\.\s*([^\s\d,]+)\s+(\d{4}),?\s*(\d{1,2}):(\d{2})")
 OKRES_RE = re.compile(
     r'<li class="selected">\s*<a[^>]*title="(okres [^"]+)"', re.IGNORECASE
 )
-
-
-class ParseError(Exception):
-    """Stránka nemá očekávanou strukturu (změnil se web nebo přišla chyba)."""
-
-
-@dataclass(frozen=True)
-class Zasah:
-    """Jeden řádek tabulky zásahů."""
-
-    nazev: str
-    kategorie: str
-    podtyp: str
-    typ: str
-    stav: str
-    obec: str
-    okres: str | None
-    stupen: str
-    cas: datetime
-
-    @property
-    def klic(self) -> str:
-        """Identita události bez času (čas se mění s aktualizací dat)."""
-        return f"{self.nazev}|{self.obec}"
-
-    @property
-    def uid(self) -> str:
-        """Identita konkrétního řádku včetně času poslední aktualizace."""
-        raw = f"{self.klic}|{self.cas.isoformat()}"
-        return sha1(raw.encode()).hexdigest()[:12]
-
-    @property
-    def aktivni(self) -> bool:
-        return not self.stav.lower().startswith("ukon")
-
-    def as_dict(self) -> dict:
-        return {
-            "nazev": self.nazev,
-            "kategorie": self.kategorie,
-            "podtyp": self.podtyp,
-            "typ": self.typ,
-            "stav": self.stav,
-            "aktivni": self.aktivni,
-            "obec": self.obec,
-            "okres": self.okres,
-            "stupen": self.stupen,
-            "cas": self.cas.isoformat(),
-            "id": self.uid,
-        }
 
 
 class _TableParser(HTMLParser):
@@ -170,7 +144,11 @@ def parse_zasahy(html: str) -> list[Zasah]:
         misto = [line.strip() for line in cells[3]["text"].split("\n") if line.strip()]
         obec = misto[0] if misto else ""
         okres = next(
-            (line.removeprefix("okres ").strip() for line in misto[1:] if line.startswith("okres ")),
+            (
+                line.removeprefix("okres ").strip()
+                for line in misto[1:]
+                if line.startswith("okres ")
+            ),
             None,
         )
         zasahy.append(
@@ -194,38 +172,3 @@ def parse_okres(html: str) -> str | None:
     """Název vybraného okresu z filtru, např. 'okres Rakovník'."""
     m = OKRES_RE.search(html)
     return m.group(1) if m else None
-
-
-# Za jak dlouho po předchozím čase ještě bereme řádek se stejným názvem
-# a obcí jako aktualizaci téže události (ne jako nový výjezd).
-AKTUALIZACE_OKNO = timedelta(hours=6)
-
-
-def rozdil(
-    zname: dict[str, Zasah], aktualni: list[Zasah]
-) -> tuple[list[Zasah], list[tuple[Zasah, Zasah]]]:
-    """Porovná známé a aktuální řádky.
-
-    Vrací (nove, aktualizovane), kde aktualizovane jsou dvojice (predchozi, nova).
-    Aktualizace = stejná událost, které se změnil čas poslední aktualizace
-    (typicky změna stavu probíhá -> ukončená).
-    """
-    aktualni_uid = {z.uid for z in aktualni}
-    nove: list[Zasah] = []
-    aktualizovane: list[tuple[Zasah, Zasah]] = []
-
-    for z in sorted(aktualni, key=lambda x: x.cas):
-        if z.uid in zname:
-            continue
-        kandidati = [
-            k
-            for k in zname.values()
-            if k.klic == z.klic
-            and k.uid not in aktualni_uid
-            and timedelta(0) <= z.cas - k.cas <= AKTUALIZACE_OKNO
-        ]
-        if kandidati:
-            aktualizovane.append((max(kandidati, key=lambda k: k.cas), z))
-        else:
-            nove.append(z)
-    return nove, aktualizovane

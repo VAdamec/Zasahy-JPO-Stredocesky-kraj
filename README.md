@@ -18,7 +18,7 @@ a společná pole zásahů; liší se dostupnými filtry, časem události a roz
 | Zdroj | Oblast a filtry | Nastavení |
 |---|---|---|
 | [PKR Středočeského kraje](https://pkr.kr-stredocesky.cz/pkr/zasahy-jpo/) | Středočeský kraj; okres a volitelně stupeň poplachu | vložení URL s filtrem z webu |
-| [Fire Brno – přehled HZS](https://udalosti.firebrno.cz/) | kraje a okresy nabízené zdrojem; výchozí kraj je Jihomoravský | výběr kraje a okresu přímo v HA |
+| [Fire Brno – přehled HZS](https://udalosti.firebrno.cz/) | kraje a okresy nabízené zdrojem, volitelně zasahující jednotka; výchozí kraj je Jihomoravský | výběr oblasti a vyhledání jednotky přímo v HA |
 
 Každý zdroj a filtr může mít vlastní instanci. Nabídka oblastí pochází od zdroje
 a sama o sobě nezaručuje úplné pokrytí daty.
@@ -79,6 +79,15 @@ Předvyplněná URL je příklad filtru. Pro vlastní oblast ji nahraď adresou 
 1. V integraci vyber **Fire Brno (HZS)**.
 2. Vyber kraj z nabídky zdroje.
 3. Vyber okres nebo ponech celý kraj. Kopírování URL není potřeba.
+4. Volitelně do **Zasahující jednotka – vyhledat** zadej alespoň dva znaky názvu
+   a v dalším kroku vyber jednotku z výsledků. Prázdné hledání nebo prázdný výběr
+   zahrne všechny jednotky. Název můžeš vyhledat znovu přímo v kroku výběru.
+
+Jednotka se kombinuje s filtrem kraje a okresu. Pokud chceš sledovat její zásahy
+napříč okresy daného kraje, zvol celý kraj. Filtr jednotky platí pro všech pět
+senzorů i eventy; název jednotky se přidá do názvu instance.
+Existující instance zůstávají bez filtru jednotky. Pro sledování konkrétní jednotky
+přidej novou instanci s tímto filtrem.
 
 ## Entity
 

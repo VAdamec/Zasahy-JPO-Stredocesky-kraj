@@ -4,6 +4,7 @@ from ..const import (
     CONF_DISTRICT,
     CONF_PROVIDER,
     CONF_REGION,
+    CONF_UNIT,
     CONF_URL,
     DEFAULT_REGION,
     PROVIDER_FIREBRNO,
@@ -24,5 +25,6 @@ def create_provider(hass, session, data) -> IncidentProvider:
             session,
             int(data.get(CONF_REGION, DEFAULT_REGION)),
             int(data[CONF_DISTRICT]) if data.get(CONF_DISTRICT) else None,
+            int(data[CONF_UNIT]) if data.get(CONF_UNIT) else None,
         )
     raise ParseError(f"Unknown incident provider: {provider}")

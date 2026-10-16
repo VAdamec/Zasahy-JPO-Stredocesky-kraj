@@ -214,3 +214,50 @@ async def test_unknown_lookup_refresh_is_bounded():
         await provider.async_fetch_incidents(NOW)
         await provider.async_fetch_incidents(NOW + timedelta(minutes=10))
     assert fetch.call_count == 3
+
+
+@pytest.mark.parametrize("unit", [None, 6203010])
+async def test_unit_filter_is_applied_to_both_query_windows(unit):
+    provider = FireBrnoProvider(None, 116, 3703, unit)
+    provider.lookups = lookups()
+    provider._loaded = NOW
+    with patch(
+        "custom_components.pkr_zasahy.providers.firebrno.async_json",
+        return_value=fixture("incidents"),
+    ) as fetch:
+        await provider.async_fetch_incidents(NOW)
+    assert fetch.call_count == 2
+    for call in fetch.call_args_list:
+        params = dict(call.args[2])
+        assert params["krajId"] == "116" and params["okresId"] == "3703"
+        if unit is not None:
+            assert params["jednotkaId"] == str(unit)
+        else:
+            assert "jednotkaId" not in params
+
+
+@pytest.mark.parametrize("payload", [None, {}, [{"id": "1", "nazev": "Invalid"}]])
+async def test_unit_search_rejects_invalid_payloads(payload):
+    from custom_components.pkr_zasahy.providers.firebrno import async_search_units
+
+    with (
+        patch(
+            "custom_components.pkr_zasahy.providers.firebrno.async_json",
+            return_value=payload,
+        ),
+        pytest.raises(ParseError),
+    ):
+        await async_search_units(None, "Tišnov")
+
+
+async def test_unit_search_empty_and_matching_names():
+    from custom_components.pkr_zasahy.providers.firebrno import async_search_units
+
+    with patch(
+        "custom_components.pkr_zasahy.providers.firebrno.async_json",
+        side_effect=[[], fixture("jednotky")],
+    ) as fetch:
+        assert await async_search_units(None, "No match") == {}
+        units = await async_search_units(None, "Tišnov")
+    assert units[6203010]["nazev"] == "HS Tišnov"
+    assert fetch.call_args.args[2] == {"term": "Tišnov"}

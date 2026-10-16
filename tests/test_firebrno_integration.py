@@ -35,7 +35,7 @@ def register(mock, rows=None, status=200):
     )
 
 
-async def start_firebrno(hass, district="3702", region="116"):
+async def start_firebrno(hass, district="3702", region="116", unit_search=""):
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
@@ -49,7 +49,7 @@ async def start_firebrno(hass, district="3702", region="116"):
     )
     assert result["step_id"] == "firebrno"
     return await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"district": district}
+        result["flow_id"], {"district": district, "unit_search": unit_search}
     )
 
 
@@ -230,3 +230,146 @@ async def test_options_reload_firebrno(hass, aioclient_mock):
     )
     await hass.async_block_till_done()
     assert entry.runtime_data.update_interval == timedelta(minutes=15)
+
+
+async def test_unit_selection_persistence_duplicates_and_unfiltered_entry(
+    hass, aioclient_mock, freezer
+):
+    freezer.move_to("2026-10-16T12:00:00Z")
+    register(aioclient_mock)
+    aioclient_mock.get(FIREBRNO_API + "jednotky", json=fixture("jednotky"))
+    unfiltered = await start_firebrno(hass)
+    await hass.async_block_till_done()
+    assert unfiltered["result"].unique_id == "firebrno:116:3702"
+    assert "unit" not in unfiltered["result"].data
+    assert unfiltered["result"].runtime_data.provider.unit is None
+
+    selection = await start_firebrno(hass, unit_search="Tišnov")
+    assert selection["step_id"] == "firebrno_unit"
+    result = await hass.config_entries.flow.async_configure(
+        selection["flow_id"], {"unit": "6203010"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["unit"] == 6203010
+    assert result["data"]["unit_name"] == "HS Tišnov"
+    assert "unit_search" not in result["data"]
+    assert result["title"] == "Zásahy JPO – Brno-město – HS Tišnov"
+    await hass.async_block_till_done()
+    entry = result["result"]
+    assert entry.unique_id == "firebrno:116:3702:unit:6203010"
+    assert entry.runtime_data.provider.unit == 6203010
+    assert sensor(hass, entry, "dnes").state == "1"
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.provider.unit == 6203010
+
+    selection = await start_firebrno(hass, unit_search="Tišnov")
+    duplicate = await hass.config_entries.flow.async_configure(
+        selection["flow_id"], {"unit": "6203010"}
+    )
+    assert duplicate["type"] is FlowResultType.ABORT
+    assert duplicate["reason"] == "already_configured"
+
+    selection = await start_firebrno(hass, unit_search="Tišnov")
+    other = await hass.config_entries.flow.async_configure(
+        selection["flow_id"], {"unit": "6200001"}
+    )
+    assert other["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert other["result"].unique_id.endswith(":unit:6200001")
+
+
+async def test_unit_search_can_be_refined_or_skipped(hass, aioclient_mock):
+    register(aioclient_mock)
+    aioclient_mock.get(FIREBRNO_API + "jednotky", json=fixture("jednotky"))
+    selection = await start_firebrno(hass, unit_search="Tišnov")
+    assert selection["step_id"] == "firebrno_unit"
+    aioclient_mock.clear_requests()
+    register(aioclient_mock)
+    aioclient_mock.get(
+        FIREBRNO_API + "jednotky", json=[{"id": 6202010, "nazev": "CHS Brno - Lidická"}]
+    )
+    selection = await hass.config_entries.flow.async_configure(
+        selection["flow_id"], {"unit_search": "Other"}
+    )
+    unit_selector = next(
+        value
+        for key, value in selection["data_schema"].schema.items()
+        if key.schema == "unit"
+    )
+    assert unit_selector.config["options"] == [
+        {"value": "6202010", "label": "CHS Brno - Lidická"}
+    ]
+    assert selection["type"] is FlowResultType.FORM and not selection["errors"]
+    skipped = await hass.config_entries.flow.async_configure(selection["flow_id"], {})
+    assert skipped["type"] is FlowResultType.CREATE_ENTRY
+    assert "unit" not in skipped["data"]
+    await hass.async_block_till_done()
+    assert skipped["result"].unique_id == "firebrno:116:3702"
+
+
+@pytest.mark.parametrize(
+    ("status", "payload", "expected"),
+    [
+        (200, [], {"unit_search": "unit_not_found"}),
+        (200, {}, {"base": "invalid_page"}),
+        (503, [], {"base": "cannot_connect"}),
+    ],
+)
+async def test_unit_search_failure_stays_in_setup(
+    hass, aioclient_mock, status, payload, expected
+):
+    register(aioclient_mock)
+    aioclient_mock.get(FIREBRNO_API + "jednotky", json=payload, status=status)
+    result = await start_firebrno(hass, unit_search="Tišnov")
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "firebrno" and result["errors"] == expected
+    assert not hass.config_entries.async_entries(DOMAIN)
+    aioclient_mock.clear_requests()
+    register(aioclient_mock)
+    aioclient_mock.get(FIREBRNO_API + "jednotky", json=fixture("jednotky"))
+    retry = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"district": "3702", "unit_search": "Tišnov"}
+    )
+    assert retry["step_id"] == "firebrno_unit" and not retry["errors"]
+
+
+async def test_unit_search_requires_two_characters(hass, aioclient_mock):
+    register(aioclient_mock)
+    result = await start_firebrno(hass, unit_search=" X ")
+    assert result["errors"] == {"unit_search": "unit_search_short"}
+    assert not hass.config_entries.async_entries(DOMAIN)
+
+
+async def test_unit_validation_failure_preserves_selection(hass, aioclient_mock):
+    register(aioclient_mock, status=503)
+    aioclient_mock.get(FIREBRNO_API + "jednotky", json=fixture("jednotky"))
+    result = await start_firebrno(hass, unit_search="Tišnov")
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"unit": "6203010"}
+    )
+    assert result["step_id"] == "firebrno_unit"
+    assert result["errors"] == {"base": "cannot_connect"}
+    unit_field = next(
+        key for key in result["data_schema"].schema if key.schema == "unit"
+    )
+    assert unit_field.description["suggested_value"] == "6203010"
+    assert not hass.config_entries.async_entries(DOMAIN)
+    aioclient_mock.clear_requests()
+    register(aioclient_mock)
+    retry = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"unit": "6203010"}
+    )
+    assert retry["type"] is FlowResultType.CREATE_ENTRY
+    assert retry["data"]["unit"] == 6203010
+    await hass.async_block_till_done()
+
+
+async def test_unit_selection_rejects_ids_outside_search_results(hass):
+    from custom_components.pkr_zasahy.config_flow import PkrConfigFlow
+
+    flow = PkrConfigFlow()
+    flow.hass = hass
+    flow._units = {row["id"]: row for row in fixture("jednotky")}
+    result = await flow.async_step_firebrno_unit({"unit": "999"})
+    assert result["errors"] == {"base": "invalid_filter"}

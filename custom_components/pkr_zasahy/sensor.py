@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -19,9 +18,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_URL, DOMAIN
+from .const import DOMAIN
 from .coordinator import PkrConfigEntry, PkrCoordinator, PkrData
-from .parser import Zasah
+from .models import Zasah
 
 
 def _dnes(zasahy: list[Zasah]) -> list[Zasah]:
@@ -31,6 +30,28 @@ def _dnes(zasahy: list[Zasah]) -> list[Zasah]:
 
 def _aktivni(zasahy: list[Zasah]) -> list[Zasah]:
     return [z for z in zasahy if z.aktivni]
+
+
+def _history(data: PkrData) -> list[Zasah]:
+    return [
+        z
+        for z in data.zasahy
+        if data.history_start is None or z.cas >= data.history_start
+    ]
+
+
+def _active_count(data: PkrData) -> int | None:
+    if any(z.aktivni is None for z in data.zasahy):
+        return None
+    return len(_aktivni(data.zasahy))
+
+
+def _active_attrs(data: PkrData) -> dict[str, Any]:
+    attrs = _seznam(_aktivni(data.zasahy))
+    unknown = [z.as_dict() for z in data.zasahy if z.aktivni is None]
+    if unknown:
+        attrs["neznamy_stav"] = unknown
+    return attrs
 
 
 def _seznam(zasahy: list[Zasah]) -> dict[str, Any]:
@@ -65,16 +86,16 @@ SENSORS: tuple[PkrSensorDescription, ...] = (
         translation_key="aktivni",
         icon="mdi:fire-alert",
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: len(_aktivni(d.zasahy)),
-        attrs_fn=lambda d: _seznam(_aktivni(d.zasahy)),
+        value_fn=_active_count,
+        attrs_fn=_active_attrs,
     ),
     PkrSensorDescription(
         key="vse",
         translation_key="vse",
         icon="mdi:format-list-bulleted",
         state_class=SensorStateClass.MEASUREMENT,
-        value_fn=lambda d: len(d.zasahy),
-        attrs_fn=lambda d: _seznam(d.zasahy),
+        value_fn=lambda d: len(_history(d)),
+        attrs_fn=lambda d: _seznam(_history(d)),
     ),
     PkrSensorDescription(
         key="posledni",
@@ -106,7 +127,7 @@ class PkrSensor(CoordinatorEntity[PkrCoordinator], SensorEntity):
 
     _attr_has_entity_name = True
     # Seznam zásahů v atributech by zbytečně nafukoval databázi recorderu
-    _unrecorded_attributes = frozenset({"zasahy"})
+    _unrecorded_attributes = frozenset({"zasahy", "neznamy_stav"})
     entity_description: PkrSensorDescription
 
     def __init__(self, coordinator: PkrCoordinator, desc: PkrSensorDescription) -> None:
@@ -117,10 +138,10 @@ class PkrSensor(CoordinatorEntity[PkrCoordinator], SensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
-            manufacturer="Středočeský kraj",
-            model="Portál krizového řízení – zásahy JPO",
+            manufacturer=coordinator.provider.manufacturer,
+            model=coordinator.provider.model,
             entry_type=DeviceEntryType.SERVICE,
-            configuration_url=entry.data[CONF_URL],
+            configuration_url=coordinator.provider.url,
         )
 
     @property

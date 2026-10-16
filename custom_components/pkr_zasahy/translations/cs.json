@@ -2,17 +2,39 @@
   "config": {
     "step": {
       "user": {
+        "title": "Zásahy JPO",
+        "description": "Vyber zdroj dat.",
+        "data": {
+          "provider": "Zdroj dat"
+        }
+      },
+      "pkr": {
         "title": "Zásahy JPO – Středočeský kraj",
         "description": "Vlož adresu stránky zásahů s nastaveným filtrem (okres, stupeň poplachu). Filtr nastavíš na webu a URL zkopíruješ z prohlížeče.",
         "data": {
           "url": "Adresa stránky"
+        }
+      },
+      "firebrno_region": {
+        "title": "Fire Brno – kraj",
+        "description": "Vyber kraj ze seznamu poskytovaného webem.",
+        "data": {
+          "region": "Kraj"
+        }
+      },
+      "firebrno": {
+        "title": "Fire Brno – okres",
+        "description": "Vyber okres nebo celý kraj. Historie zahrnuje 7 dní, probíhající zásahy hledáme za posledních 30 dní.",
+        "data": {
+          "district": "Okres / celý kraj"
         }
       }
     },
     "error": {
       "invalid_url": "Adresa musí začínat https://pkr.kr-stredocesky.cz/pkr/zasahy-jpo/",
       "cannot_connect": "Stránku se nepodařilo stáhnout",
-      "invalid_page": "Na stránce není tabulka zásahů"
+      "invalid_page": "Zdroj dat má neočekávanou strukturu",
+      "invalid_filter": "Neplatný kraj nebo okres"
     },
     "abort": {
       "already_configured": "Tento filtr už je nastavený"

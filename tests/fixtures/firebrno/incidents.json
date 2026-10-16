@@ -1,0 +1,27 @@
+[
+  {
+    "id": 101,
+    "casOhlaseni": "2026-10-16T10:15:00.000Z",
+    "casVzniku": null,
+    "stavId": 420,
+    "typId": 3100,
+    "podtypId": 3109,
+    "poznamkaProMedia": null,
+    "kraj": {
+      "id": 116,
+      "nazev": "Jihomoravský"
+    },
+    "okres": {
+      "id": 3702,
+      "nazev": "Brno-město"
+    },
+    "obec": "Brno",
+    "castObce": "Zábrdovice",
+    "ORP": "Brno",
+    "ulice": null,
+    "silnice": null,
+    "gis1": "596886",
+    "gis2": "1159920",
+    "zoc": false
+  }
+]

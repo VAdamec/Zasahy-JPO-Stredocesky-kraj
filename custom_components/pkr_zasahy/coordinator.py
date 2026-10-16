@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-import logging
 
 import aiohttp
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -17,14 +15,14 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_SCAN_INTERVAL,
-    CONF_URL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_AKTUALIZACE,
     EVENT_NOVY_ZASAH,
-    USER_AGENT,
 )
-from .parser import ParseError, Zasah, parse_zasahy, rozdil
+from .models import ParseError, Zasah, rozdil
+from .providers import create_provider
+from .providers.base import async_fetch  # noqa: F401 - compatibility import
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,20 +33,11 @@ PAMET = timedelta(days=10)
 type PkrConfigEntry = ConfigEntry["PkrCoordinator"]
 
 
-async def async_fetch(session: aiohttp.ClientSession, url: str) -> str:
-    """Stáhne HTML stránky."""
-    async with asyncio.timeout(30):
-        resp = await session.get(
-            url, headers={"User-Agent": USER_AGENT, "Accept-Language": "cs"}
-        )
-        resp.raise_for_status()
-        return await resp.text()
-
-
 @dataclass
 class PkrData:
     zasahy: list[Zasah] = field(default_factory=list)
     stazeno: datetime | None = None
+    history_start: datetime | None = None
 
 
 class PkrCoordinator(DataUpdateCoordinator[PkrData]):
@@ -65,24 +54,25 @@ class PkrCoordinator(DataUpdateCoordinator[PkrData]):
             name=DOMAIN,
             update_interval=timedelta(minutes=minutes),
         )
-        self._url: str = entry.data[CONF_URL]
         self._session = async_get_clientsession(hass)
+        self.provider = create_provider(hass, self._session, entry.data)
         self._zname: dict[str, Zasah] = {}
         self._prvni_beh = True
 
     async def _async_update_data(self) -> PkrData:
         try:
-            html = await async_fetch(self._session, self._url)
+            zasahy = await self.provider.async_fetch_incidents(dt_util.now())
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise UpdateFailed(f"Stránku se nepodařilo stáhnout: {err}") from err
-
-        try:
-            zasahy = await self.hass.async_add_executor_job(parse_zasahy, html)
+            raise UpdateFailed(f"Data se nepodařilo stáhnout: {err}") from err
         except ParseError as err:
-            raise UpdateFailed(f"Stránka má neočekávanou strukturu: {err}") from err
+            raise UpdateFailed(f"Zdroj má neočekávanou strukturu: {err}") from err
 
         self._zpracuj_eventy(zasahy)
-        return PkrData(zasahy=zasahy, stazeno=dt_util.now())
+        return PkrData(
+            zasahy=zasahy,
+            stazeno=dt_util.now(),
+            history_start=self.provider.history_start,
+        )
 
     def _zpracuj_eventy(self, zasahy: list[Zasah]) -> None:
         # První načtení po startu jen naplní paměť, ať po restartu HA
@@ -98,13 +88,19 @@ class PkrCoordinator(DataUpdateCoordinator[PkrData]):
                 self.hass.bus.async_fire(EVENT_AKTUALIZACE, data)
         self._prvni_beh = False
 
-        hranice = dt_util.now() - PAMET
+        now = dt_util.now()
+        hranice = now - PAMET
+        native_limit = now - timedelta(days=30)
         self._zname = {
-            uid: z for uid, z in self._zname.items() if z.cas >= hranice
+            uid: z
+            for uid, z in self._zname.items()
+            if z.cas >= (native_limit if z.native_id is not None else hranice)
         }
         self._zname.update({z.uid: z for z in zasahy})
 
     def _event_data(self, z: Zasah) -> dict:
         data = z.as_dict()
         data["entry_id"] = self.config_entry.entry_id
+        data["provider"] = self.provider.name
+        data["source_url"] = self.provider.url
         return data

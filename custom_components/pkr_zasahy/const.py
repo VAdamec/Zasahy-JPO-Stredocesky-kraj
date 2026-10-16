@@ -16,3 +16,12 @@ EVENT_NOVY_ZASAH = f"{DOMAIN}_novy_zasah"
 EVENT_AKTUALIZACE = f"{DOMAIN}_aktualizace_zasahu"
 
 USER_AGENT = "HomeAssistant-pkr_zasahy/1.0 (osobni pouziti)"
+
+CONF_PROVIDER = "provider"
+CONF_REGION = "region"
+CONF_DISTRICT = "district"
+PROVIDER_PKR = "pkr"
+PROVIDER_FIREBRNO = "firebrno"
+FIREBRNO_URL = "https://udalosti.firebrno.cz/"
+FIREBRNO_API = f"{FIREBRNO_URL}api/"
+DEFAULT_REGION = 116

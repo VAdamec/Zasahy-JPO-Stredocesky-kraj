@@ -1,4 +1,4 @@
-"""Zásahy jednotek požární ochrany – Portál krizového řízení Středočeského kraje."""
+"""Zásahy jednotek požární ochrany – PKR and Fire Brno providers."""
 
 from __future__ import annotations
 

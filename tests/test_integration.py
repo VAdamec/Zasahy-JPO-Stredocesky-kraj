@@ -2,28 +2,28 @@
 
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 pytest.importorskip("pytest_homeassistant_custom_component")
 
-from homeassistant import config_entries  # noqa: E402
-from homeassistant.core import HomeAssistant  # noqa: E402
-from homeassistant.data_entry_flow import FlowResultType  # noqa: E402
-from homeassistant.util import dt as dt_util  # noqa: E402
-from pytest_homeassistant_custom_component.common import (  # noqa: E402
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import (
     async_capture_events,
 )
 
-from custom_components.pkr_zasahy.const import (  # noqa: E402
+from custom_components.pkr_zasahy.const import (
     DEFAULT_URL,
     DOMAIN,
     EVENT_AKTUALIZACE,
     EVENT_NOVY_ZASAH,
 )
 
-HTML = (Path(__file__).parent / "fixtures" / "rakovnik.html").read_text(encoding="utf-8")
+HTML = (Path(__file__).parent / "fixtures" / "rakovnik.html").read_text(
+    encoding="utf-8"
+)
 URL = "https://pkr.kr-stredocesky.cz/pkr/zasahy-jpo/?r_cast_uzemi__in=1192"
 
 NOVY_RADEK = (
@@ -54,6 +54,9 @@ async def test_flow_senzory_a_eventy(hass: HomeAssistant, aioclient_mock, freeze
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"provider": "pkr"}
+    )
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"url": DEFAULT_URL}
@@ -67,12 +70,23 @@ async def test_flow_senzory_a_eventy(hass: HomeAssistant, aioclient_mock, freeze
     assert dnes is not None, hass.states.async_entity_ids("sensor")
     assert dnes.state == "5"
     assert len(dnes.attributes["zasahy"]) == 5
-    assert hass.states.get("sensor.zasahy_jpo_okres_rakovnik_zasahy_za_posledni_tyden").state == "26"
-    assert hass.states.get("sensor.zasahy_jpo_okres_rakovnik_probihajici_zasahy").state == "0"
+    assert (
+        hass.states.get(
+            "sensor.zasahy_jpo_okres_rakovnik_zasahy_za_posledni_tyden"
+        ).state
+        == "26"
+    )
+    assert (
+        hass.states.get("sensor.zasahy_jpo_okres_rakovnik_probihajici_zasahy").state
+        == "0"
+    )
     posledni = hass.states.get("sensor.zasahy_jpo_okres_rakovnik_posledni_zasah")
     assert posledni.state == "únik nebezpečných látek - na komunikaci ropa - Rakovník"
     assert posledni.attributes["obec"] == "Rakovník"
-    assert hass.states.get("sensor.zasahy_jpo_okres_rakovnik_cas_posledniho_zasahu").state == "2026-10-09T15:05:00+00:00"
+    assert (
+        hass.states.get("sensor.zasahy_jpo_okres_rakovnik_cas_posledniho_zasahu").state
+        == "2026-10-09T15:05:00+00:00"
+    )
 
     nove = async_capture_events(hass, EVENT_NOVY_ZASAH)
     akt = async_capture_events(hass, EVENT_AKTUALIZACE)
@@ -85,7 +99,10 @@ async def test_flow_senzory_a_eventy(hass: HomeAssistant, aioclient_mock, freeze
     assert len(nove) == 1 and not akt
     assert nove[0].data["obec"] == "Kněževes"
     assert nove[0].data["stupen"] == "II."
-    assert hass.states.get("sensor.zasahy_jpo_okres_rakovnik_probihajici_zasahy").state == "1"
+    assert (
+        hass.states.get("sensor.zasahy_jpo_okres_rakovnik_probihajici_zasahy").state
+        == "1"
+    )
     assert hass.states.get("sensor.zasahy_jpo_okres_rakovnik_zasahy_dnes").state == "6"
 
     # Stejný požár ukončen -> aktualizace, ne nový zásah
@@ -97,12 +114,18 @@ async def test_flow_senzory_a_eventy(hass: HomeAssistant, aioclient_mock, freeze
     assert len(akt) == 1
     assert akt[0].data["predchozi_stav"] == "probíhající"
     assert akt[0].data["stav"] == "ukončená"
-    assert hass.states.get("sensor.zasahy_jpo_okres_rakovnik_probihajici_zasahy").state == "0"
+    assert (
+        hass.states.get("sensor.zasahy_jpo_okres_rakovnik_probihajici_zasahy").state
+        == "0"
+    )
 
 
 async def test_flow_spatna_url(hass: HomeAssistant):
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"provider": "pkr"}
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"url": "https://example.com/"}
@@ -116,6 +139,9 @@ async def test_flow_rozbita_stranka(hass: HomeAssistant, aioclient_mock):
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"provider": "pkr"}
+    )
+    result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"url": DEFAULT_URL}
     )
     assert result["errors"] == {"base": "invalid_page"}
@@ -126,7 +152,12 @@ async def test_options_interval(hass: HomeAssistant, aioclient_mock):
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    await hass.config_entries.flow.async_configure(result["flow_id"], {"url": DEFAULT_URL})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"provider": "pkr"}
+    )
+    await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"url": DEFAULT_URL}
+    )
     await hass.async_block_till_done()
     entry = hass.config_entries.async_entries(DOMAIN)[0]
 

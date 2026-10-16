@@ -1,0 +1,17 @@
+[
+  {
+    "id": 3702,
+    "nazev": "Brno-město",
+    "krajId": 116
+  },
+  {
+    "id": 3703,
+    "nazev": "Brno-venkov",
+    "krajId": 116
+  },
+  {
+    "id": 3710,
+    "nazev": "Třebíč",
+    "krajId": 108
+  }
+]

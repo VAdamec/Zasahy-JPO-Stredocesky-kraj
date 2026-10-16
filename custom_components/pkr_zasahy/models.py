@@ -137,3 +137,13 @@ def rozdil(
         else:
             nove.append(z)
     return nove, aktualizovane
+
+
+@dataclass(frozen=True)
+class PeriodHistory:
+    """Full current-year base plus recent merges; None means never loaded."""
+
+    zasahy: list[Zasah] | None
+    as_of: datetime
+    refreshed: datetime | None = None
+    stale: bool = False

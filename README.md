@@ -6,8 +6,9 @@
 
 Integrace pro Home Assistant, která sleduje **zásahy hasičů z více zdrojů**.
 Vybereš zdroj a oblast, kterou chceš sledovat. Integrace vytvoří senzory pro dashboard
-a posílá eventy pro automatizace a notifikace. Oba zdroje používají stejné entity
-a společná pole zásahů; liší se dostupnými filtry, časem události a rozsahem historie.
+a posílá eventy pro automatizace a notifikace. Oba zdroje používají společné základní senzory
+a pole zásahů. Fire Brno navíc poskytuje měsíční a roční přehled. Zdroje se liší
+dostupnými filtry, časem události a rozsahem historie.
 
 > *English: Home Assistant custom integration for fire brigade incidents from multiple
 > data providers. Select a provider and area, then use shared sensors and events for
@@ -30,7 +31,8 @@ aby fungovaly i existující konfigurace a automatizace.
 ## Co umí
 
 - **Výběr zdroje a oblasti přes UI**, bez YAML konfigurace integrace.
-- **Pět senzorů:** dnešní zásahy, probíhající zásahy, týdenní přehled, poslední zásah a jeho čas.
+- **Společné senzory:** dnešní zásahy, probíhající zásahy, týdenní přehled, poslední zásah a jeho čas.
+- **Fire Brno navíc:** zásahy v aktuálním měsíci a roce, včetně počtu a úplného seznamu vráceného zdrojem.
 - **Event při novém zásahu** pro vlastní notifikace, například jen pro vybrané obce.
 - **Event při aktualizaci zásahu**, například při změně stavu.
 - **Více instancí** pro různé zdroje nebo oblasti.
@@ -84,14 +86,14 @@ Předvyplněná URL je příklad filtru. Pro vlastní oblast ji nahraď adresou 
    zahrne všechny jednotky. Název můžeš vyhledat znovu přímo v kroku výběru.
 
 Jednotka se kombinuje s filtrem kraje a okresu. Pokud chceš sledovat její zásahy
-napříč okresy daného kraje, zvol celý kraj. Filtr jednotky platí pro všech pět
-senzorů i eventy; název jednotky se přidá do názvu instance.
+napříč okresy daného kraje, zvol celý kraj. Filtr jednotky platí pro všechny dostupné
+senzory i eventy; název jednotky se přidá do názvu instance.
 Existující instance zůstávají bez filtru jednotky. Pro sledování konkrétní jednotky
 přidej novou instanci s tímto filtrem.
 
 ## Entity
 
-Každá instance má stejnou sadu senzorů bez ohledu na zdroj:
+Všechny instance mají pět společných senzorů; Fire Brno má navíc měsíční a roční přehled:
 
 | Senzor | Stav | Atributy |
 |---|---|---|
@@ -100,10 +102,37 @@ Každá instance má stejnou sadu senzorů bez ohledu na zdroj:
 | Zásahy za poslední týden | počet zásahů v dostupné týdenní historii | `zasahy` |
 | Poslední zásah | název nejnovějšího zásahu | pole posledního zásahu |
 | Čas posledního zásahu | čas nejnovějšího zásahu, typ timestamp | – |
+| Zásahy tento měsíc (Fire Brno) | počet zásahů od začátku aktuálního kalendářního měsíce | `zasahy`, informace o historii |
+| Zásahy tento rok (Fire Brno) | počet zásahů od 1. ledna aktuálního roku | `zasahy`, informace o historii |
 
 ID entit závisí na názvu instance, jazyku HA a případném ručním přejmenování.
 Najdeš je u zařízení integrace nebo v **Vývojářské nástroje → Stavy**.
 Do dashboardu vždy použij ID ze své instalace.
+
+### Měsíční a roční historie (Fire Brno)
+
+Oba přehledy používají čas ohlášení a kalendářní hranice v **Europe/Prague**,
+nikoli posledních 30 nebo 365 dní. Mají stejný filtr kraje, okresu a jednotky jako
+zbytek instance. PKR tyto senzory nevytváří, protože jeho tabulka úplnou historii neposkytuje.
+
+Roční přehled se načte při startu a obnovuje jednou za místní kalendářní den.
+Mezi obnovami se do paměťové kopie promítají aktuální záznamy z běžného pollingu.
+Na začátku nového roku se načte nový roční přehled; měsíční senzor se automaticky
+přepne na aktuální měsíc. Historické načítání ani opravy archivu nevyvolávají eventy.
+
+Kromě úplného seznamu `zasahy` mají oba senzory atributy:
+
+| Atribut | Význam |
+|---|---|
+| `od` / `do` | kalendářní začátek období a čas posledního běžného načtení |
+| `historie_obnovena` | čas posledního úspěšného úplného načtení roční historie |
+| `historie_zastarala` | `true`, pokud se úplné načtení nezdařilo nebo dosud chybí dnešní obnova |
+
+Při prvním neúspěšném načtení historie jsou jen tyto dva senzory nedostupné;
+ostatní senzory fungují dál. Pokud už existuje platná kopie pro aktuální rok,
+zůstane dostupná s příznakem zastaralosti. Obnovení se pak zkouší nejvýše jednou
+za hodinu. Paměťová kopie se po restartu znovu sestaví ze zdroje.
+Seznamy `zasahy` se ani u těchto senzorů neukládají do recorderu.
 
 ### Společná pole zásahu
 
@@ -130,6 +159,7 @@ Položky v atributu `zasahy` a data eventů mají tato společná pole:
 | Význam `cas` | poslední aktualizace dat | čas ohlášení |
 | Dnešní a poslední zásah | podle času aktualizace | podle času ohlášení |
 | Týdenní přehled | seznam z webu, přibližně poslední týden | posledních 7 dní |
+| Měsíční a roční přehled | není k dispozici | aktuální kalendářní měsíc a rok |
 | Probíhající zásahy | z dostupného seznamu webu | kontrolované do 30 dní od ohlášení |
 | Stupeň poplachu | poskytuje ho zdroj | v používaném seznamu není dostupný |
 | Rozpoznání aktualizace | stejný název a obec, novější čas do 6 hodin | stejné nativní ID a změna obsahu, i bez změny času |
@@ -242,7 +272,8 @@ backend webové aplikace a denní paměťovou kopii číselníků. Neznámý kó
 nejvýše jeden dodatečný pokus o jejich obnovení denně. Platnou kopii lze použít
 i při výpadku obnovení.
 
-Fire Brno načítá sedmidenní historii a starší záznamy do 30 dní, aby zachytilo
+Fire Brno pro běžné senzory a eventy načítá sedmidenní historii a starší záznamy
+do 30 dní, aby zachytilo
 i ukončení již sledovaných zásahů. Zmizelý záznam se automaticky neoznačuje jako ukončený.
 Chyba HTTP, JSON nebo struktury dat nastaví senzory jako nedostupné;
 není považována za prázdný seznam.
@@ -252,10 +283,11 @@ není považována za prázdný seznam.
 - **Data jsou orientační a mohou být zpožděná.** Dostupnost a úplnost závisí na zdroji.
 - **Časy mají podle zdroje jiný význam.** PKR ukazuje aktualizaci, Fire Brno ohlášení.
   „Poslední zásah“ proto u Fire Brno neznamená naposledy změněný zásah.
-- **Historie je omezená.** PKR poskytuje přibližně poslední týden; Fire Brno má
-  sedmidenní přehled a kontrolu probíhajících zásahů do 30 dní od ohlášení.
-  Starší otevřené zásahy Fire Brno nejsou zahrnuté. Úplnost historie ani případné
+- **Rozsah závisí na zdroji a senzoru.** PKR poskytuje přibližně poslední týden.
+  Fire Brno má týdenní, měsíční a roční přehled; senzor probíhajících zásahů
+  kontroluje jen záznamy do 30 dní od ohlášení. Úplnost historie ani případné
   serverové omezení počtu záznamů nelze z nedokumentovaného backendu zaručit.
+  Starší opravy se v měsíčním a ročním přehledu projeví až při úplné obnově.
 - **Stav určuje provider.** U Fire Brno je rozhodující číselný kód. Kód `500` web
   řadí mezi otevřené, i když jeho text zní „Ukončená“. Neznámý kód má `aktivni: null`;
   počet probíhajících zásahů pak bude `unknown` s atributem `neznamy_stav`.
@@ -281,7 +313,7 @@ a porovnání v `models.py`, sdílené chování v `coordinator.py` a `sensor.py
 `tests/test_parser.py` testuje PKR parser na uložené kopii stránky a nepotřebuje
 Home Assistant, stačí `pytest`. Fire Brno testy používají syntetické JSON fixtures
 odpovídající ověřenému schématu. Integrační testy pokrývají nastavení, senzory,
-staré konfigurace, výpadky, restart a eventy. Automatické testy nepřistupují k živým zdrojům.
+staré konfigurace, výpadky, restart, eventy a kalendářní historii včetně přelomu měsíce a roku. Automatické testy nepřistupují k živým zdrojům.
 
 Logování pro ladění:
 

@@ -20,7 +20,7 @@ from .const import (
     EVENT_AKTUALIZACE,
     EVENT_NOVY_ZASAH,
 )
-from .models import ParseError, Zasah, rozdil
+from .models import ParseError, PeriodHistory, Zasah, rozdil
 from .providers import create_provider
 from .providers.base import async_fetch  # noqa: F401 - compatibility import
 
@@ -38,6 +38,7 @@ class PkrData:
     zasahy: list[Zasah] = field(default_factory=list)
     stazeno: datetime | None = None
     history_start: datetime | None = None
+    period_history: PeriodHistory | None = None
 
 
 class PkrCoordinator(DataUpdateCoordinator[PkrData]):
@@ -68,10 +69,16 @@ class PkrCoordinator(DataUpdateCoordinator[PkrData]):
             raise UpdateFailed(f"Zdroj má neočekávanou strukturu: {err}") from err
 
         self._zpracuj_eventy(zasahy)
+        period_history = None
+        if self.provider.supports_period_history:
+            period_history = await self.provider.async_fetch_period_history(
+                dt_util.now(), zasahy
+            )
         return PkrData(
             zasahy=zasahy,
             stazeno=dt_util.now(),
             history_start=self.provider.history_start,
+            period_history=period_history,
         )
 
     def _zpracuj_eventy(self, zasahy: list[Zasah]) -> None:

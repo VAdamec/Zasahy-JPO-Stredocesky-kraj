@@ -9,7 +9,7 @@ from typing import Protocol
 import aiohttp
 
 from ..const import USER_AGENT
-from ..models import ParseError, Zasah
+from ..models import ParseError, PeriodHistory, Zasah
 
 
 async def async_fetch(session: aiohttp.ClientSession, url: str) -> str:
@@ -38,6 +38,7 @@ async def async_json(session: aiohttp.ClientSession, url: str, params=None):
 class IncidentProvider(Protocol):
     """Source-specific transport/normalization consumed by the coordinator."""
 
+    supports_period_history: bool
     name: str
     manufacturer: str
     model: str
@@ -46,3 +47,8 @@ class IncidentProvider(Protocol):
 
     async def async_fetch_incidents(self, now: datetime) -> list[Zasah]:
         """Return a validated snapshot, newest first, or raise an error."""
+
+    async def async_fetch_period_history(
+        self, now: datetime, recent: list[Zasah]
+    ) -> PeriodHistory | None:
+        """Return optional calendar history without affecting recent polling."""

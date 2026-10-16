@@ -24,7 +24,7 @@
       },
       "firebrno": {
         "title": "Fire Brno – district",
-        "description": "Select a district or the whole region. History covers 7 days; active incidents are checked over the past 30 days. Optionally enter at least two characters of a unit name; leave empty for all units.",
+        "description": "Select a district or the whole region. Weekly, current-month and current-year history are available; active incidents are checked over the past 30 days. Optionally enter at least two characters of a unit name; leave empty for all units.",
         "data": {
           "district": "District / whole region",
           "unit_search": "Responding unit – search (optional)"
@@ -77,6 +77,12 @@
       },
       "posledni_cas": {
         "name": "Latest incident time"
+      },
+      "mesic": {
+        "name": "Incidents this month"
+      },
+      "rok": {
+        "name": "Incidents this year"
       }
     }
   }

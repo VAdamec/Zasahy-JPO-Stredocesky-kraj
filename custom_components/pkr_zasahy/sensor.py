@@ -58,6 +58,48 @@ def _seznam(zasahy: list[Zasah]) -> dict[str, Any]:
     return {"zasahy": [z.as_dict() for z in zasahy]}
 
 
+def _period_records(data: PkrData, period: str) -> list[Zasah] | None:
+    history = data.period_history
+    if history is None or history.zasahy is None:
+        return None
+    year, month = history.as_of.year, history.as_of.month
+    return [
+        z
+        for z in history.zasahy
+        if z.cas.year == year and (period == "rok" or z.cas.month == month)
+    ]
+
+
+def _period_count(data: PkrData, period: str) -> int | None:
+    records = _period_records(data, period)
+    return len(records) if records is not None else None
+
+
+def _period_attrs(data: PkrData, period: str) -> dict[str, Any]:
+    history = data.period_history
+    if history is None:
+        return {}
+    attrs = {
+        "historie_obnovena": history.refreshed.isoformat()
+        if history.refreshed
+        else None,
+        "historie_zastarala": history.stale,
+        "od": history.as_of.replace(
+            month=1 if period == "rok" else history.as_of.month,
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        ).isoformat(),
+        "do": history.as_of.isoformat(),
+    }
+    records = _period_records(data, period)
+    if records is not None:
+        attrs.update(_seznam(records))
+    return attrs
+
+
 def _posledni_attrs(zasahy: list[Zasah]) -> dict[str, Any]:
     if not zasahy:
         return {}
@@ -70,6 +112,7 @@ def _posledni_attrs(zasahy: list[Zasah]) -> dict[str, Any]:
 class PkrSensorDescription(SensorEntityDescription):
     value_fn: Callable[[PkrData], Any]
     attrs_fn: Callable[[PkrData], dict[str, Any]] | None = None
+    period: str | None = None
 
 
 SENSORS: tuple[PkrSensorDescription, ...] = (
@@ -113,13 +156,30 @@ SENSORS: tuple[PkrSensorDescription, ...] = (
 )
 
 
+PERIOD_SENSORS: tuple[PkrSensorDescription, ...] = tuple(
+    PkrSensorDescription(
+        key=period,
+        translation_key=period,
+        period=period,
+        icon="mdi:calendar-month" if period == "mesic" else "mdi:calendar",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d, p=period: _period_count(d, p),
+        attrs_fn=lambda d, p=period: _period_attrs(d, p),
+    )
+    for period in ("mesic", "rok")
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: PkrConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
-    async_add_entities(PkrSensor(coordinator, desc) for desc in SENSORS)
+    descriptions = SENSORS
+    if coordinator.provider.supports_period_history:
+        descriptions += PERIOD_SENSORS
+    async_add_entities(PkrSensor(coordinator, desc) for desc in descriptions)
 
 
 class PkrSensor(CoordinatorEntity[PkrCoordinator], SensorEntity):
@@ -143,6 +203,17 @@ class PkrSensor(CoordinatorEntity[PkrCoordinator], SensorEntity):
             entry_type=DeviceEntryType.SERVICE,
             configuration_url=coordinator.provider.url,
         )
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        if self.entity_description.period:
+            return (
+                _period_records(self.coordinator.data, self.entity_description.period)
+                is not None
+            )
+        return True
 
     @property
     def native_value(self) -> Any:

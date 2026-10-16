@@ -200,6 +200,11 @@ async def test_legacy_entry_keeps_entity_unique_ids(hass, aioclient_mock, freeze
     assert hass.states.get(entity.entity_id).state == "5"
     assert entry.runtime_data.provider.name == "pkr"
     assert entry.unique_id == url and "provider" not in entry.data
+    for key in ("mesic", "rok"):
+        assert (
+            registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_{key}")
+            is None
+        )
     assert registry.async_get(entity.entity_id).unique_id == f"{entry.entry_id}_dnes"
 
 
@@ -373,3 +378,114 @@ async def test_unit_selection_rejects_ids_outside_search_results(hass):
     flow._units = {row["id"]: row for row in fixture("jednotky")}
     result = await flow.async_step_firebrno_unit({"unit": "999"})
     assert result["errors"] == {"base": "invalid_filter"}
+
+
+async def test_calendar_sensors_full_lists_and_backfill_never_emit_events(
+    hass, aioclient_mock, freezer
+):
+    from unittest.mock import patch
+
+    freezer.move_to("2026-10-16T12:00:00Z")
+    register(aioclient_mock)
+    recent = fixture("incidents")
+    january = deepcopy(recent[0])
+    january.update(id=201, casOhlaseni="2026-01-09T10:00:00Z", stavId=510)
+    october = deepcopy(january)
+    october.update(id=202, casOhlaseni="2026-10-01T10:00:00Z")
+    archive = [january, october, *deepcopy(recent)]
+    archive_calls = []
+
+    async def query(provider, start, end, statuses):
+        if start.month == start.day == 1 and start.hour == 0:
+            archive_calls.append(start)
+            return deepcopy(archive)
+        return deepcopy(recent)
+
+    new = async_capture_events(hass, "pkr_zasahy_novy_zasah")
+    updates = async_capture_events(hass, "pkr_zasahy_aktualizace_zasahu")
+    with patch(
+        "custom_components.pkr_zasahy.providers.firebrno.FireBrnoProvider._query",
+        new=query,
+    ):
+        result = await start_firebrno(hass)
+        await hass.async_block_till_done()
+        entry = result["result"]
+        assert sensor(hass, entry, "rok").state == "3"
+        assert sensor(hass, entry, "mesic").state == "2"
+        assert len(sensor(hass, entry, "rok").attributes["zasahy"]) == 3
+        assert len(sensor(hass, entry, "mesic").attributes["zasahy"]) == 2
+        assert (
+            sensor(hass, entry, "rok").attributes["od"] == "2026-01-01T00:00:00+01:00"
+        )
+        assert sensor(hass, entry, "vse").state == "1"
+        assert not new and not updates
+        assert len(archive_calls) == 1
+
+        # A new live incident updates both periods without redownloading the year.
+        another = deepcopy(recent[0])
+        another["id"] = 102
+        recent.append(another)
+        await refresh(hass, entry)
+        assert sensor(hass, entry, "rok").state == "4"
+        assert sensor(hass, entry, "mesic").state == "3"
+        assert len(new) == 1 and new[0].data["native_id"] == 102
+        assert len(archive_calls) == 1
+
+        # A late historical record appears only in archive sensors, not on the event bus.
+        older = deepcopy(january)
+        older.update(id=203, casOhlaseni="2026-02-01T10:00:00Z")
+        archive.extend([older, another])
+        freezer.move_to("2026-10-17T12:00:00Z")
+        await refresh(hass, entry)
+        assert sensor(hass, entry, "rok").state == "5"
+        assert sensor(hass, entry, "mesic").state == "3"
+        assert len(archive_calls) == 2
+        assert len(new) == 1 and not updates
+
+
+async def test_calendar_outage_is_isolated_and_cache_freshness_visible(
+    hass, aioclient_mock, freezer
+):
+    from unittest.mock import patch
+
+    freezer.move_to("2026-10-16T12:00:00Z")
+    register(aioclient_mock)
+    rows = fixture("incidents")
+    fail = True
+    calls = []
+
+    async def query(provider, start, end, statuses):
+        if start.month == start.day == 1 and start.hour == 0:
+            calls.append(start)
+            if fail:
+                raise TimeoutError
+        return deepcopy(rows)
+
+    with patch(
+        "custom_components.pkr_zasahy.providers.firebrno.FireBrnoProvider._query",
+        new=query,
+    ):
+        result = await start_firebrno(hass)
+        await hass.async_block_till_done()
+        entry = result["result"]
+        assert sensor(hass, entry, "dnes").state == "1"
+        assert sensor(hass, entry, "rok").state == "unavailable"
+        assert sensor(hass, entry, "mesic").state == "unavailable"
+        assert "zasahy" not in sensor(hass, entry, "rok").attributes
+        await refresh(hass, entry)
+        assert len(calls) == 1
+
+        fail = False
+        freezer.move_to("2026-10-16T13:01:00Z")
+        await refresh(hass, entry)
+        assert sensor(hass, entry, "rok").state == "1"
+        refreshed = sensor(hass, entry, "rok").attributes["historie_obnovena"]
+        assert not sensor(hass, entry, "rok").attributes["historie_zastarala"]
+
+        fail = True
+        freezer.move_to("2026-10-17T12:00:00Z")
+        await refresh(hass, entry)
+        assert sensor(hass, entry, "vse").state == "1"
+        assert sensor(hass, entry, "rok").state == "1"
+        assert sensor(hass, entry, "rok").attributes["historie_zastarala"]
+        assert sensor(hass, entry, "rok").attributes["historie_obnovena"] == refreshed

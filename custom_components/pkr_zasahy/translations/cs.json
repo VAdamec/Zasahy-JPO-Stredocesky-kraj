@@ -24,7 +24,7 @@
       },
       "firebrno": {
         "title": "Fire Brno – okres",
-        "description": "Vyber okres nebo celý kraj. Historie zahrnuje 7 dní, probíhající zásahy hledáme za posledních 30 dní. Volitelně zadej alespoň dva znaky názvu jednotky; prázdné pole zahrne všechny jednotky.",
+        "description": "Vyber okres nebo celý kraj. K dispozici je týdenní, měsíční a roční historie; probíhající zásahy hledáme za posledních 30 dní. Volitelně zadej alespoň dva znaky názvu jednotky; prázdné pole zahrne všechny jednotky.",
         "data": {
           "district": "Okres / celý kraj",
           "unit_search": "Zasahující jednotka – vyhledat (volitelné)"
@@ -77,6 +77,12 @@
       },
       "posledni_cas": {
         "name": "Čas posledního zásahu"
+      },
+      "mesic": {
+        "name": "Zásahy tento měsíc"
+      },
+      "rok": {
+        "name": "Zásahy tento rok"
       }
     }
   }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -9,7 +10,7 @@ from zoneinfo import ZoneInfo
 import aiohttp
 
 from ..const import FIREBRNO_API, FIREBRNO_URL
-from ..models import ParseError, Zasah
+from ..models import ParseError, PeriodHistory, Zasah
 from .base import async_json
 
 _LOGGER = logging.getLogger(__name__)
@@ -143,6 +144,7 @@ def parse_incidents(data, lookups: dict[str, dict[int, dict]]) -> list[Zasah]:
 
 
 class FireBrnoProvider:
+    supports_period_history = True
     name = "firebrno"
     manufacturer = "HZS Jihomoravského kraje"
     model = "Fire Brno – přehled událostí HZS"
@@ -164,6 +166,11 @@ class FireBrnoProvider:
         self._unknown_refresh: datetime | None = None
         self.history_start: datetime | None = None
         self._tracked_ids: dict[str, datetime] = {}
+        self._archive: dict[str, Zasah] | None = None
+        self._archive_year: int | None = None
+        self._archive_refreshed: datetime | None = None
+        self._archive_attempt: datetime | None = None
+        self._archive_failed = False
 
     async def async_load_lookups(self, now: datetime, force=False):
         if not force and self._loaded and now - self._loaded < LOOKUP_TTL:
@@ -253,3 +260,69 @@ class FireBrnoProvider:
         self._tracked_ids = tracked
         self.history_start = history_start
         return sorted(combined.values(), key=lambda item: item.cas, reverse=True)
+
+    async def async_fetch_period_history(
+        self, now: datetime, recent: list[Zasah]
+    ) -> PeriodHistory:
+        """Refresh the full-year base independently of recent-data availability."""
+        local_now = now.astimezone(TZ)
+        year_start = datetime(local_now.year, 1, 1, tzinfo=TZ)
+        if self._archive_year != local_now.year:
+            self._archive_year = local_now.year
+            self._archive = None
+            self._archive_refreshed = None
+            self._archive_attempt = None
+            self._archive_failed = False
+        due = (
+            self._archive_refreshed is None
+            or self._archive_refreshed.date() != local_now.date()
+        )
+        retry_allowed = (
+            self._archive_attempt is None
+            or now - self._archive_attempt >= timedelta(hours=1)
+        )
+        refreshed = False
+        if due and retry_allowed:
+            self._archive_attempt = now
+            try:
+                payload = await self._query(
+                    year_start, local_now, self.lookups["stavy"]
+                )
+                records = await asyncio.to_thread(
+                    parse_incidents, payload, self.lookups
+                )
+            except (aiohttp.ClientError, TimeoutError, ParseError):
+                self._archive_failed = True
+                _LOGGER.warning(
+                    "Fire Brno calendar history refresh failed; recent polling continues",
+                    exc_info=True,
+                )
+            else:
+                self._archive = {
+                    z.uid: z for z in records if year_start <= z.cas <= local_now
+                }
+                self._archive_refreshed = local_now
+                self._archive_failed = False
+                refreshed = True
+        if self._archive is not None:
+            for z in recent:
+                # The full-year request ran after recent polling; prefer its
+                # copy when both responses contain the same incident.
+                if year_start <= z.cas <= local_now and (
+                    not refreshed or z.uid not in self._archive
+                ):
+                    self._archive[z.uid] = z
+        return PeriodHistory(
+            zasahy=(
+                sorted(self._archive.values(), key=lambda z: z.cas, reverse=True)
+                if self._archive is not None
+                else None
+            ),
+            as_of=local_now,
+            refreshed=self._archive_refreshed,
+            stale=(
+                self._archive_failed
+                or self._archive_refreshed is None
+                or self._archive_refreshed.date() != local_now.date()
+            ),
+        )
